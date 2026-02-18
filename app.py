@@ -12,7 +12,13 @@ app = Flask(__name__)
 # DATABASE CONFIG
 # ==============================
 
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get("DATABASE_URL")
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
+# Fix for Render postgres URL
+if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
@@ -29,17 +35,14 @@ class Recommendation(db.Model):
     weight = db.Column(db.Float)
     units = db.Column(db.Integer)
     fragility = db.Column(db.String(10))
-    
     best_material = db.Column(db.String(200))
     total_cost = db.Column(db.Float)
     total_co2 = db.Column(db.Float)
     strength = db.Column(db.Float)
     sustainability_score = db.Column(db.Float)
 
-# ⚠️ DO NOT create tables at top level in production
-
 # ==============================
-# LOAD DATASET SAFELY
+# LOAD DATASET
 # ==============================
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
@@ -64,10 +67,13 @@ def home():
 
     if request.method == "POST":
 
-        item = request.form.get("item")
-        weight = float(request.form.get("weight"))
-        units = int(request.form.get("units"))
-        fragility = request.form.get("fragility")
+        try:
+            item = request.form.get("item")
+            weight = float(request.form.get("weight"))
+            units = int(request.form.get("units"))
+            fragility = request.form.get("fragility")
+        except:
+            return "Invalid form input", 400
 
         form_data = request.form
 
@@ -102,12 +108,37 @@ def home():
             total_cost = float(round(float(row["Cost_per_kg"]) * weight * units, 2))
             total_co2 = float(round(float(row["CO2_Emission_kg"]) * weight * units, 2))
 
+            # ==============================
+            # WHY RECOMMENDED LOGIC
+            # ==============================
+
+            reasons = []
+
+            if row["Biodegradable"] == "Yes":
+                reasons.append("Biodegradable and eco-friendly")
+
+            if eco_score > 0.7:
+                reasons.append("Very low carbon footprint")
+
+            if cost_score > 0.7:
+                reasons.append("Cost efficient option")
+
+            if strength_score > 0.8:
+                reasons.append("High structural strength")
+
+            if sustainability_score > 85:
+                reasons.append("Excellent sustainability performance")
+
+            if not reasons:
+                reasons.append("Balanced cost, strength and environmental impact")
+
             results.append({
                 "Material": str(row["Material_Name"]),
                 "Total_Cost": total_cost,
                 "Total_CO2": total_co2,
                 "Strength": material_strength,
-                "Score": sustainability_score
+                "Score": sustainability_score,
+                "Reasons": ", ".join(reasons)
             })
 
         results = sorted(results, key=lambda x: x["Score"], reverse=True)
@@ -116,12 +147,12 @@ def home():
             top5 = results[:5]
             best = top5[0]
 
+            # Save ONLY core values to DB
             new_entry = Recommendation(
                 item=str(item),
                 weight=float(weight),
                 units=int(units),
                 fragility=str(fragility),
-                
                 best_material=str(best["Material"]),
                 total_cost=float(best["Total_Cost"]),
                 total_co2=float(best["Total_CO2"]),
@@ -135,7 +166,7 @@ def home():
     return render_template("index.html", top5=top5, best=best, form_data=form_data)
 
 # ==============================
-# EXPORT ROUTES
+# EXPORT EXCEL
 # ==============================
 
 @app.route("/export_excel")
@@ -153,13 +184,18 @@ def export_excel():
     ] for r in data]
 
     df_export = pd.DataFrame(rows, columns=[
-        "Item", "Material", "Cost", "CO2", "Strength (MPa)", "Score"
+        "Item", "Material", "Cost", "CO2",
+        "Strength (MPa)", "Score"
     ])
 
     file_path = "sustainability_report.xlsx"
     df_export.to_excel(file_path, index=False)
 
     return send_file(file_path, as_attachment=True)
+
+# ==============================
+# EXPORT PDF
+# ==============================
 
 @app.route("/export_pdf")
 def export_pdf():
@@ -198,7 +234,7 @@ def export_pdf():
 # ==============================
 
 if __name__ == "__main__":
-   with app.app_context():
-    db.create_all()
+    with app.app_context():
+        db.create_all()
 
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
