@@ -1,6 +1,5 @@
-import pandas as pd
-import numpy as np
 import os
+import pandas as pd
 from io import BytesIO
 from flask import Flask, render_template, request, send_file
 from flask_sqlalchemy import SQLAlchemy
@@ -10,11 +9,10 @@ from reportlab.lib.styles import getSampleStyleSheet
 app = Flask(__name__)
 
 # ==============================
-# DATABASE CONFIG (Render Ready)
+# DATABASE CONFIG (Render Safe)
 # ==============================
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
-# Fix for Render PostgreSQL (important)
 if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
@@ -27,14 +25,11 @@ db = SQLAlchemy(app)
 # DATABASE MODEL
 # ==============================
 class Recommendation(db.Model):
-    __tablename__ = "recommendation"
-
     id = db.Column(db.Integer, primary_key=True)
     item = db.Column(db.String(100))
     weight = db.Column(db.Float)
     units = db.Column(db.Integer)
     fragility = db.Column(db.String(10))
-    category = db.Column(db.String(50))
     best_material = db.Column(db.String(200))
     total_cost = db.Column(db.Float)
     total_co2 = db.Column(db.Float)
@@ -45,13 +40,18 @@ with app.app_context():
     db.create_all()
 
 # ==============================
-# LOAD DATASET
+# SAFE DATASET LOAD (Render Safe)
 # ==============================
-df = pd.read_csv("data/final/ml_dataset.csv")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+csv_path = os.path.join(BASE_DIR, "data", "final", "ml_dataset.csv")
 
-df["Cost_per_kg"] = pd.to_numeric(df["Cost_per_kg"], errors="coerce")
-df["CO2_Emission_kg"] = pd.to_numeric(df["CO2_Emission_kg"], errors="coerce")
-df["Tensile_Strength_MPa"] = pd.to_numeric(df["Tensile_Strength_MPa"], errors="coerce")
+if os.path.exists(csv_path):
+    df = pd.read_csv(csv_path)
+    df["Cost_per_kg"] = pd.to_numeric(df["Cost_per_kg"], errors="coerce")
+    df["CO2_Emission_kg"] = pd.to_numeric(df["CO2_Emission_kg"], errors="coerce")
+    df["Tensile_Strength_MPa"] = pd.to_numeric(df["Tensile_Strength_MPa"], errors="coerce")
+else:
+    df = pd.DataFrame()
 
 # ==============================
 # HOME ROUTE
@@ -61,19 +61,16 @@ def home():
 
     top5 = None
     best = None
-    form_data = None
 
-    if request.method == "POST":
+    if request.method == "POST" and not df.empty:
 
         item = request.form.get("item")
         weight = float(request.form.get("weight"))
         units = int(request.form.get("units"))
         fragility = request.form.get("fragility")
 
-        form_data = request.form
-
-        max_cost = float(df["Cost_per_kg"].max())
-        max_co2 = float(df["CO2_Emission_kg"].max())
+        max_cost = df["Cost_per_kg"].max()
+        max_co2 = df["CO2_Emission_kg"].max()
 
         fragility_factor = {"L": 1, "M": 1.5, "H": 2}
         f_factor = fragility_factor.get(fragility, 1)
@@ -85,46 +82,28 @@ def home():
             if pd.isna(row["Tensile_Strength_MPa"]):
                 continue
 
-            material_strength = float(row["Tensile_Strength_MPa"])
             required_strength = weight * 5 * f_factor
-            strength_score = min(material_strength / required_strength, 1)
+            strength_score = min(row["Tensile_Strength_MPa"] / required_strength, 1)
 
-            eco_score = 1 - (float(row["CO2_Emission_kg"]) / max_co2)
-            cost_score = 1 - (float(row["Cost_per_kg"]) / max_cost)
+            eco_score = 1 - (row["CO2_Emission_kg"] / max_co2)
+            cost_score = 1 - (row["Cost_per_kg"] / max_cost)
             biodeg_score = 1 if row["Biodegradable"] == "Yes" else 0.5
 
-            sustainability_score = float(round(
+            sustainability_score = round(
                 (eco_score * 0.3 +
                  cost_score * 0.25 +
                  biodeg_score * 0.2 +
-                 strength_score * 0.25) * 100, 2))
+                 strength_score * 0.25) * 100, 2)
 
-            total_cost = float(round(float(row["Cost_per_kg"]) * weight * units, 2))
-            total_co2 = float(round(float(row["CO2_Emission_kg"]) * weight * units, 2))
-
-            reasons = []
-
-            if row["Biodegradable"] == "Yes":
-                reasons.append("Biodegradable and eco-friendly")
-            if eco_score > 0.7:
-                reasons.append("Very low carbon footprint")
-            if cost_score > 0.7:
-                reasons.append("Cost efficient option")
-            if strength_score > 0.8:
-                reasons.append("High structural strength")
-            if sustainability_score > 85:
-                reasons.append("Excellent sustainability performance")
-
-            if not reasons:
-                reasons.append("Balanced cost, strength and environmental impact")
+            total_cost = round(row["Cost_per_kg"] * weight * units, 2)
+            total_co2 = round(row["CO2_Emission_kg"] * weight * units, 2)
 
             results.append({
-                "Material": str(row["Material_Name"]),
+                "Material": row["Material_Name"],
                 "Total_Cost": total_cost,
                 "Total_CO2": total_co2,
-                "Strength": material_strength,
-                "Score": sustainability_score,
-                "Reasons": reasons
+                "Strength": row["Tensile_Strength_MPa"],
+                "Score": sustainability_score
             })
 
         results = sorted(results, key=lambda x: x["Score"], reverse=True)
@@ -134,22 +113,21 @@ def home():
             best = top5[0]
 
             new_entry = Recommendation(
-                item=str(item),
-                weight=float(weight),
-                units=int(units),
-                fragility=str(fragility),
-                category="general",
-                best_material=str(best["Material"]),
-                total_cost=float(best["Total_Cost"]),
-                total_co2=float(best["Total_CO2"]),
-                strength=float(best["Strength"]),
-                sustainability_score=float(best["Score"])
+                item=item,
+                weight=weight,
+                units=units,
+                fragility=fragility,
+                best_material=best["Material"],
+                total_cost=best["Total_Cost"],
+                total_co2=best["Total_CO2"],
+                strength=best["Strength"],
+                sustainability_score=best["Score"]
             )
 
             db.session.add(new_entry)
             db.session.commit()
 
-    return render_template("index.html", top5=top5, best=best, form_data=form_data)
+    return render_template("index.html", top5=top5, best=best)
 
 # ==============================
 # EXPORT EXCEL (IN MEMORY)
@@ -169,7 +147,7 @@ def export_excel():
     ] for r in data]
 
     df_export = pd.DataFrame(rows, columns=[
-        "Item", "Material", "Cost", "CO2", "Strength (MPa)", "Score"
+        "Item", "Material", "Cost", "CO2", "Strength", "Score"
     ])
 
     output = BytesIO()
@@ -225,7 +203,7 @@ def export_pdf():
     )
 
 # ==============================
-# RUN APP
+# RUN
 # ==============================
 if __name__ == "__main__":
     app.run()
