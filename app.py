@@ -6,28 +6,28 @@ from flask_sqlalchemy import SQLAlchemy
 
 app = Flask(__name__)
 
-# =====================================================
-# DATABASE CONFIG (Render Production Safe)
-# =====================================================
+# ==============================
+# DATABASE CONFIG (Render Safe)
+# ==============================
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
 if DATABASE_URL:
     if DATABASE_URL.startswith("postgres://"):
         DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 else:
-    DATABASE_URL = "sqlite:///local.db"  # fallback for local testing
+    DATABASE_URL = "sqlite:///local.db"
 
 app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db = SQLAlchemy(app)
 
-# =====================================================
+# ==============================
 # DATABASE MODEL
-# =====================================================
+# ==============================
 class Recommendation(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    item = db.Column(db.String(100))
+    item = db.Column(db.String(200))
     weight = db.Column(db.Float)
     units = db.Column(db.Integer)
     fragility = db.Column(db.String(10))
@@ -40,9 +40,9 @@ class Recommendation(db.Model):
 with app.app_context():
     db.create_all()
 
-# =====================================================
-# LOAD DATASET (Safe for Render)
-# =====================================================
+# ==============================
+# LOAD DATASET
+# ==============================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 csv_path = os.path.join(BASE_DIR, "data", "final", "ml_dataset.csv")
 
@@ -55,9 +55,9 @@ if os.path.exists(csv_path):
 else:
     df = pd.DataFrame()
 
-# =====================================================
+# ==============================
 # HOME ROUTE
-# =====================================================
+# ==============================
 @app.route("/", methods=["GET", "POST"])
 def home():
 
@@ -68,7 +68,7 @@ def home():
     if request.method == "POST":
 
         if df.empty:
-            error = "Dataset file not found."
+            error = "Dataset not found."
             return render_template("index.html", error=error)
 
         try:
@@ -140,9 +140,9 @@ def home():
 
     return render_template("index.html", top5=top5, best=best, error=error)
 
-# =====================================================
-# EXPORT EXCEL (100% Render Safe)
-# =====================================================
+# ==============================
+# EXPORT EXCEL
+# ==============================
 @app.route("/export_excel")
 def export_excel():
 
@@ -181,16 +181,16 @@ def export_excel():
 
         return send_file(
             output,
-            download_name="sustainability_report.xlsx",
             as_attachment=True,
+            download_name="sustainability_report.xlsx",
             mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
     except Exception as e:
         return f"Excel Export Error: {str(e)}"
 
-# =====================================================
-# RUN
-# =====================================================
+# ==============================
+# RUN (Render Compatible)
+# ==============================
 if __name__ == "__main__":
     app.run()
