@@ -38,7 +38,9 @@ class Recommendation(db.Model):
     reasons = db.Column(db.Text)
 
 with app.app_context():
+    db.drop_all()
     db.create_all()
+
 
 # ==============================
 # LOAD DATASET
