@@ -12,12 +12,7 @@ app = Flask(__name__)
 # DATABASE CONFIG
 # ==============================
 
-DATABASE_URL = os.environ.get("DATABASE_URL")
-
-if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
-
-app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get("DATABASE_URL")
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
@@ -40,10 +35,11 @@ class Recommendation(db.Model):
     total_co2 = db.Column(db.Float)
     strength = db.Column(db.Float)
     sustainability_score = db.Column(db.Float)
-    reasons = db.Column(db.Text)   # ✅ Added
+
+# ⚠️ DO NOT create tables at top level in production
 
 # ==============================
-# LOAD DATASET
+# LOAD DATASET SAFELY
 # ==============================
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
@@ -106,37 +102,12 @@ def home():
             total_cost = float(round(float(row["Cost_per_kg"]) * weight * units, 2))
             total_co2 = float(round(float(row["CO2_Emission_kg"]) * weight * units, 2))
 
-            # ==============================
-            # WHY RECOMMENDED LOGIC
-            # ==============================
-
-            reasons = []
-
-            if row["Biodegradable"] == "Yes":
-                reasons.append("Biodegradable and eco-friendly")
-
-            if eco_score > 0.7:
-                reasons.append("Very low carbon footprint")
-
-            if cost_score > 0.7:
-                reasons.append("Cost efficient option")
-
-            if strength_score > 0.8:
-                reasons.append("High structural strength")
-
-            if sustainability_score > 85:
-                reasons.append("Excellent sustainability performance")
-
-            if not reasons:
-                reasons.append("Balanced cost, strength and environmental impact")
-
             results.append({
                 "Material": str(row["Material_Name"]),
                 "Total_Cost": total_cost,
                 "Total_CO2": total_co2,
                 "Strength": material_strength,
-                "Score": sustainability_score,
-                "Reasons": ", ".join(reasons)
+                "Score": sustainability_score
             })
 
         results = sorted(results, key=lambda x: x["Score"], reverse=True)
@@ -155,8 +126,7 @@ def home():
                 total_cost=float(best["Total_Cost"]),
                 total_co2=float(best["Total_CO2"]),
                 strength=float(best["Strength"]),
-                sustainability_score=float(best["Score"]),
-                reasons=str(best["Reasons"])
+                sustainability_score=float(best["Score"])
             )
 
             db.session.add(new_entry)
@@ -165,7 +135,7 @@ def home():
     return render_template("index.html", top5=top5, best=best, form_data=form_data)
 
 # ==============================
-# EXPORT EXCEL
+# EXPORT ROUTES
 # ==============================
 
 @app.route("/export_excel")
@@ -173,31 +143,23 @@ def export_excel():
 
     data = Recommendation.query.all()
 
-    rows = []
-    for r in data:
-        rows.append([
-            r.item,
-            r.best_material,
-            r.total_cost,
-            r.total_co2,
-            r.strength,
-            r.sustainability_score,
-            r.reasons
-        ])
+    rows = [[
+        r.item,
+        r.best_material,
+        r.total_cost,
+        r.total_co2,
+        r.strength,
+        r.sustainability_score
+    ] for r in data]
 
     df_export = pd.DataFrame(rows, columns=[
-        "Item", "Material", "Cost", "CO2",
-        "Strength (MPa)", "Score", "Reasons"
+        "Item", "Material", "Cost", "CO2", "Strength (MPa)", "Score"
     ])
 
     file_path = "sustainability_report.xlsx"
     df_export.to_excel(file_path, index=False)
 
     return send_file(file_path, as_attachment=True)
-
-# ==============================
-# EXPORT PDF
-# ==============================
 
 @app.route("/export_pdf")
 def export_pdf():
@@ -212,7 +174,7 @@ def export_pdf():
     elements.append(Paragraph("Sustainability Report", styles["Title"]))
     elements.append(Spacer(1, 20))
 
-    table_data = [["Item", "Material", "Cost", "CO2", "Strength", "Score", "Reasons"]]
+    table_data = [["Item", "Material", "Cost", "CO2", "Strength", "Score"]]
 
     for r in data:
         table_data.append([
@@ -221,8 +183,7 @@ def export_pdf():
             r.total_cost,
             r.total_co2,
             r.strength,
-            r.sustainability_score,
-            r.reasons
+            r.sustainability_score
         ])
 
     table = Table(table_data)
