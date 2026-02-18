@@ -1,196 +1,203 @@
-import os
-from io import BytesIO
 import pandas as pd
+import numpy as np
+import os
 from flask import Flask, render_template, request, send_file
 from flask_sqlalchemy import SQLAlchemy
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table
+from reportlab.lib.styles import getSampleStyleSheet
 
 app = Flask(__name__)
 
 # ==============================
-# DATABASE CONFIG (Render Safe)
+# DATABASE CONFIG
 # ==============================
-DATABASE_URL = os.environ.get("DATABASE_URL")
 
-if DATABASE_URL:
-    if DATABASE_URL.startswith("postgres://"):
-        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
-else:
-    DATABASE_URL = "sqlite:///local.db"
-
-app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
-app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get("DATABASE_URL")
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
 
 # ==============================
 # DATABASE MODEL
 # ==============================
+
 class Recommendation(db.Model):
+    __tablename__ = "recommendation"
+
     id = db.Column(db.Integer, primary_key=True)
-    item = db.Column(db.String(200))
+    item = db.Column(db.String(100))
     weight = db.Column(db.Float)
     units = db.Column(db.Integer)
     fragility = db.Column(db.String(10))
+    category = db.Column(db.String(50))
     best_material = db.Column(db.String(200))
     total_cost = db.Column(db.Float)
     total_co2 = db.Column(db.Float)
     strength = db.Column(db.Float)
     sustainability_score = db.Column(db.Float)
 
-with app.app_context():
-    db.create_all()
+# ⚠️ DO NOT create tables at top level in production
 
 # ==============================
-# LOAD DATASET
+# LOAD DATASET SAFELY
 # ==============================
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 csv_path = os.path.join(BASE_DIR, "data", "final", "ml_dataset.csv")
 
-if os.path.exists(csv_path):
-    df = pd.read_csv(csv_path)
+df = pd.read_csv(csv_path)
 
-    df["Cost_per_kg"] = pd.to_numeric(df["Cost_per_kg"], errors="coerce")
-    df["CO2_Emission_kg"] = pd.to_numeric(df["CO2_Emission_kg"], errors="coerce")
-    df["Tensile_Strength_MPa"] = pd.to_numeric(df["Tensile_Strength_MPa"], errors="coerce")
-else:
-    df = pd.DataFrame()
+df["Cost_per_kg"] = pd.to_numeric(df["Cost_per_kg"], errors="coerce")
+df["CO2_Emission_kg"] = pd.to_numeric(df["CO2_Emission_kg"], errors="coerce")
+df["Tensile_Strength_MPa"] = pd.to_numeric(df["Tensile_Strength_MPa"], errors="coerce")
 
 # ==============================
 # HOME ROUTE
 # ==============================
+
 @app.route("/", methods=["GET", "POST"])
 def home():
 
     top5 = None
     best = None
-    error = None
+    form_data = None
 
     if request.method == "POST":
 
-        if df.empty:
-            error = "Dataset not found."
-            return render_template("index.html", error=error)
+        item = request.form.get("item")
+        weight = float(request.form.get("weight"))
+        units = int(request.form.get("units"))
+        fragility = request.form.get("fragility")
 
-        try:
-            item = request.form.get("item")
-            weight = float(request.form.get("weight"))
-            units = int(request.form.get("units"))
-            fragility = request.form.get("fragility")
+        form_data = request.form
 
-            max_cost = df["Cost_per_kg"].max()
-            max_co2 = df["CO2_Emission_kg"].max()
+        max_cost = float(df["Cost_per_kg"].max())
+        max_co2 = float(df["CO2_Emission_kg"].max())
 
-            fragility_factor = {"L": 1, "M": 1.5, "H": 2}
-            f_factor = fragility_factor.get(fragility, 1)
+        fragility_factor = {"L": 1, "M": 1.5, "H": 2}
+        f_factor = fragility_factor.get(fragility, 1)
 
-            results = []
+        results = []
 
-            for _, row in df.iterrows():
+        for _, row in df.iterrows():
 
-                if pd.isna(row["Tensile_Strength_MPa"]):
-                    continue
+            if pd.isna(row["Tensile_Strength_MPa"]):
+                continue
 
-                required_strength = weight * 5 * f_factor
-                strength_score = min(row["Tensile_Strength_MPa"] / required_strength, 1)
+            material_strength = float(row["Tensile_Strength_MPa"])
+            required_strength = weight * 5 * f_factor
 
-                eco_score = 1 - (row["CO2_Emission_kg"] / max_co2)
-                cost_score = 1 - (row["Cost_per_kg"] / max_cost)
-                biodeg_score = 1 if row["Biodegradable"] == "Yes" else 0.5
+            strength_score = min(material_strength / required_strength, 1)
 
-                sustainability_score = round(
-                    (eco_score * 0.3 +
-                     cost_score * 0.25 +
-                     biodeg_score * 0.2 +
-                     strength_score * 0.25) * 100, 2)
+            eco_score = 1 - (float(row["CO2_Emission_kg"]) / max_co2)
+            cost_score = 1 - (float(row["Cost_per_kg"]) / max_cost)
+            biodeg_score = 1 if row["Biodegradable"] == "Yes" else 0.5
 
-                total_cost = round(row["Cost_per_kg"] * weight * units, 2)
-                total_co2 = round(row["CO2_Emission_kg"] * weight * units, 2)
+            sustainability_score = float(round(
+                (eco_score * 0.3 +
+                 cost_score * 0.25 +
+                 biodeg_score * 0.2 +
+                 strength_score * 0.25) * 100, 2))
 
-                results.append({
-                    "Material": row["Material_Name"],
-                    "Total_Cost": total_cost,
-                    "Total_CO2": total_co2,
-                    "Strength": row["Tensile_Strength_MPa"],
-                    "Score": sustainability_score
-                })
+            total_cost = float(round(float(row["Cost_per_kg"]) * weight * units, 2))
+            total_co2 = float(round(float(row["CO2_Emission_kg"]) * weight * units, 2))
 
-            results = sorted(results, key=lambda x: x["Score"], reverse=True)
+            results.append({
+                "Material": str(row["Material_Name"]),
+                "Total_Cost": total_cost,
+                "Total_CO2": total_co2,
+                "Strength": material_strength,
+                "Score": sustainability_score
+            })
 
-            if results:
-                top5 = results[:5]
-                best = top5[0]
+        results = sorted(results, key=lambda x: x["Score"], reverse=True)
 
-                new_entry = Recommendation(
-                    item=item,
-                    weight=weight,
-                    units=units,
-                    fragility=fragility,
-                    best_material=best["Material"],
-                    total_cost=best["Total_Cost"],
-                    total_co2=best["Total_CO2"],
-                    strength=best["Strength"],
-                    sustainability_score=best["Score"]
-                )
+        if results:
+            top5 = results[:5]
+            best = top5[0]
 
-                db.session.add(new_entry)
-                db.session.commit()
+            new_entry = Recommendation(
+                item=str(item),
+                weight=float(weight),
+                units=int(units),
+                fragility=str(fragility),
+                category="general",
+                best_material=str(best["Material"]),
+                total_cost=float(best["Total_Cost"]),
+                total_co2=float(best["Total_CO2"]),
+                strength=float(best["Strength"]),
+                sustainability_score=float(best["Score"])
+            )
 
-        except Exception as e:
-            error = str(e)
+            db.session.add(new_entry)
+            db.session.commit()
 
-    return render_template("index.html", top5=top5, best=best, error=error)
+    return render_template("index.html", top5=top5, best=best, form_data=form_data)
 
 # ==============================
-# EXPORT EXCEL
+# EXPORT ROUTES
 # ==============================
+
 @app.route("/export_excel")
 def export_excel():
 
-    try:
-        data = Recommendation.query.all()
+    data = Recommendation.query.all()
 
-        rows = []
-        for r in data:
-            rows.append([
-                r.item,
-                r.weight,
-                r.units,
-                r.fragility,
-                r.best_material,
-                r.total_cost,
-                r.total_co2,
-                r.strength,
-                r.sustainability_score
-            ])
+    rows = [[
+        r.item,
+        r.best_material,
+        r.total_cost,
+        r.total_co2,
+        r.strength,
+        r.sustainability_score
+    ] for r in data]
 
-        df_export = pd.DataFrame(rows, columns=[
-            "Item",
-            "Weight",
-            "Units",
-            "Fragility",
-            "Best Material",
-            "Total Cost",
-            "Total CO2",
-            "Strength",
-            "Sustainability Score"
+    df_export = pd.DataFrame(rows, columns=[
+        "Item", "Material", "Cost", "CO2", "Strength (MPa)", "Score"
+    ])
+
+    file_path = "sustainability_report.xlsx"
+    df_export.to_excel(file_path, index=False)
+
+    return send_file(file_path, as_attachment=True)
+
+@app.route("/export_pdf")
+def export_pdf():
+
+    data = Recommendation.query.all()
+
+    file_path = "sustainability_report.pdf"
+    doc = SimpleDocTemplate(file_path)
+    elements = []
+
+    styles = getSampleStyleSheet()
+    elements.append(Paragraph("Sustainability Report", styles["Title"]))
+    elements.append(Spacer(1, 20))
+
+    table_data = [["Item", "Material", "Cost", "CO2", "Strength", "Score"]]
+
+    for r in data:
+        table_data.append([
+            r.item,
+            r.best_material,
+            r.total_cost,
+            r.total_co2,
+            r.strength,
+            r.sustainability_score
         ])
 
-        output = BytesIO()
-        df_export.to_excel(output, index=False, engine="openpyxl")
-        output.seek(0)
+    table = Table(table_data)
+    elements.append(table)
 
-        return send_file(
-            output,
-            as_attachment=True,
-            download_name="sustainability_report.xlsx",
-            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+    doc.build(elements)
 
-    except Exception as e:
-        return f"Excel Export Error: {str(e)}"
+    return send_file(file_path, as_attachment=True)
 
 # ==============================
-# RUN (Render Compatible)
+# MAIN
 # ==============================
+
 if __name__ == "__main__":
-    app.run()
+    with app.app_context():
+        db.create_all()
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
