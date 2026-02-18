@@ -1,26 +1,31 @@
 import pandas as pd
 import numpy as np
 import os
+import io
 from flask import Flask, render_template, request, send_file
 from flask_sqlalchemy import SQLAlchemy
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table
 from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib import colors
 
 app = Flask(__name__)
 
 # ==============================
-# DATABASE CONFIG
+# DATABASE CONFIG (Render Safe)
 # ==============================
+database_url = os.environ.get("DATABASE_URL")
 
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get("DATABASE_URL")
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+if database_url and database_url.startswith("postgres://"):
+    database_url = database_url.replace("postgres://", "postgresql://", 1)
+
+app.config["SQLALCHEMY_DATABASE_URI"] = database_url
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db = SQLAlchemy(app)
 
 # ==============================
 # DATABASE MODEL
 # ==============================
-
 class Recommendation(db.Model):
     __tablename__ = "recommendation"
 
@@ -36,16 +41,13 @@ class Recommendation(db.Model):
     strength = db.Column(db.Float)
     sustainability_score = db.Column(db.Float)
 
-# ⚠️ DO NOT create tables at top level in production
+with app.app_context():
+    db.create_all()
 
 # ==============================
-# LOAD DATASET SAFELY
+# LOAD DATASET
 # ==============================
-
-BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-csv_path = os.path.join(BASE_DIR, "data", "final", "ml_dataset.csv")
-
-df = pd.read_csv(csv_path)
+df = pd.read_csv("data/final/ml_dataset.csv")
 
 df["Cost_per_kg"] = pd.to_numeric(df["Cost_per_kg"], errors="coerce")
 df["CO2_Emission_kg"] = pd.to_numeric(df["CO2_Emission_kg"], errors="coerce")
@@ -54,7 +56,6 @@ df["Tensile_Strength_MPa"] = pd.to_numeric(df["Tensile_Strength_MPa"], errors="c
 # ==============================
 # HOME ROUTE
 # ==============================
-
 @app.route("/", methods=["GET", "POST"])
 def home():
 
@@ -71,8 +72,8 @@ def home():
 
         form_data = request.form
 
-        max_cost = float(df["Cost_per_kg"].max())
-        max_co2 = float(df["CO2_Emission_kg"].max())
+        max_cost = df["Cost_per_kg"].max()
+        max_co2 = df["CO2_Emission_kg"].max()
 
         fragility_factor = {"L": 1, "M": 1.5, "H": 2}
         f_factor = fragility_factor.get(fragility, 1)
@@ -89,21 +90,21 @@ def home():
 
             strength_score = min(material_strength / required_strength, 1)
 
-            eco_score = 1 - (float(row["CO2_Emission_kg"]) / max_co2)
-            cost_score = 1 - (float(row["Cost_per_kg"]) / max_cost)
+            eco_score = 1 - (row["CO2_Emission_kg"] / max_co2)
+            cost_score = 1 - (row["Cost_per_kg"] / max_cost)
             biodeg_score = 1 if row["Biodegradable"] == "Yes" else 0.5
 
-            sustainability_score = float(round(
+            sustainability_score = round(
                 (eco_score * 0.3 +
                  cost_score * 0.25 +
                  biodeg_score * 0.2 +
-                 strength_score * 0.25) * 100, 2))
+                 strength_score * 0.25) * 100, 2)
 
-            total_cost = float(round(float(row["Cost_per_kg"]) * weight * units, 2))
-            total_co2 = float(round(float(row["CO2_Emission_kg"]) * weight * units, 2))
+            total_cost = round(row["Cost_per_kg"] * weight * units, 2)
+            total_co2 = round(row["CO2_Emission_kg"] * weight * units, 2)
 
             results.append({
-                "Material": str(row["Material_Name"]),
+                "Material": row["Material_Name"],
                 "Total_Cost": total_cost,
                 "Total_CO2": total_co2,
                 "Strength": material_strength,
@@ -117,16 +118,16 @@ def home():
             best = top5[0]
 
             new_entry = Recommendation(
-                item=str(item),
-                weight=float(weight),
-                units=int(units),
-                fragility=str(fragility),
+                item=item,
+                weight=weight,
+                units=units,
+                fragility=fragility,
                 category="general",
-                best_material=str(best["Material"]),
-                total_cost=float(best["Total_Cost"]),
-                total_co2=float(best["Total_CO2"]),
-                strength=float(best["Strength"]),
-                sustainability_score=float(best["Score"])
+                best_material=best["Material"],
+                total_cost=best["Total_Cost"],
+                total_co2=best["Total_CO2"],
+                strength=best["Strength"],
+                sustainability_score=best["Score"]
             )
 
             db.session.add(new_entry)
@@ -135,39 +136,49 @@ def home():
     return render_template("index.html", top5=top5, best=best, form_data=form_data)
 
 # ==============================
-# EXPORT ROUTES
+# EXPORT EXCEL (Render Safe)
 # ==============================
-
 @app.route("/export_excel")
 def export_excel():
 
     data = Recommendation.query.all()
 
-    rows = [[
-        r.item,
-        r.best_material,
-        r.total_cost,
-        r.total_co2,
-        r.strength,
-        r.sustainability_score
-    ] for r in data]
+    rows = []
+    for r in data:
+        rows.append([
+            r.item,
+            r.best_material,
+            r.total_cost,
+            r.total_co2,
+            r.strength,
+            r.sustainability_score
+        ])
 
     df_export = pd.DataFrame(rows, columns=[
         "Item", "Material", "Cost", "CO2", "Strength (MPa)", "Score"
     ])
 
-    file_path = "sustainability_report.xlsx"
-    df_export.to_excel(file_path, index=False)
+    output = io.BytesIO()
+    df_export.to_excel(output, index=False, engine="openpyxl")
+    output.seek(0)
 
-    return send_file(file_path, as_attachment=True)
+    return send_file(
+        output,
+        download_name="sustainability_report.xlsx",
+        as_attachment=True,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
 
+# ==============================
+# EXPORT PDF (Render Safe)
+# ==============================
 @app.route("/export_pdf")
 def export_pdf():
 
     data = Recommendation.query.all()
 
-    file_path = "sustainability_report.pdf"
-    doc = SimpleDocTemplate(file_path)
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer)
     elements = []
 
     styles = getSampleStyleSheet()
@@ -191,13 +202,17 @@ def export_pdf():
 
     doc.build(elements)
 
-    return send_file(file_path, as_attachment=True)
+    buffer.seek(0)
+
+    return send_file(
+        buffer,
+        download_name="sustainability_report.pdf",
+        as_attachment=True,
+        mimetype="application/pdf"
+    )
 
 # ==============================
-# MAIN
+# RUN
 # ==============================
-
 if __name__ == "__main__":
-    with app.app_context():
-        db.create_all()
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    app.run()
