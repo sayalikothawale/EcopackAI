@@ -4,6 +4,12 @@ import numpy as np
 import pandas as pd
 from flask import Flask, render_template, request, send_file
 from flask_sqlalchemy import SQLAlchemy
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib import colors
+from reportlab.lib.units import inch
+from reportlab.platypus import Table
+from reportlab.lib.pagesizes import letter
 
 app = Flask(__name__)
 
@@ -36,7 +42,6 @@ class Recommendation(db.Model):
     sustainability_score = db.Column(db.Float)
     reasons = db.Column(db.Text)
 
-# Create tables
 with app.app_context():
     db.create_all()
 
@@ -56,16 +61,14 @@ materials = pd.DataFrame({
     "Biodegradable": [1, 1, 1, 0]
 })
 
-latest_result = {}
-
 # =========================
 # HOME ROUTE
 # =========================
 @app.route("/", methods=["GET", "POST"])
 def home():
-    global latest_result
 
     if request.method == "POST":
+
         item = request.form["item"]
         weight = float(request.form["weight"])
         units = int(request.form["units"])
@@ -76,9 +79,9 @@ def home():
         df["Total_Cost"] = df["Cost_per_unit"] * units
         df["Total_CO2"] = df["CO2_per_unit"] * units
 
-        max_co2 = df["Total_CO2"].max()
-        max_cost = df["Total_Cost"].max()
-        max_strength = df["Strength"].max()
+        max_co2 = np.max(df["Total_CO2"])
+        max_cost = np.max(df["Total_Cost"])
+        max_strength = np.max(df["Strength"])
 
         df["Eco_Score"] = 1 - (df["Total_CO2"] / max_co2)
         df["Cost_Score"] = 1 - (df["Total_Cost"] / max_cost)
@@ -94,22 +97,25 @@ def home():
 
         best = df.sort_values(by="Score", ascending=False).iloc[0]
 
+        # Convert ALL numpy values to float
+        total_cost = float(best["Total_Cost"])
+        total_co2 = float(best["Total_CO2"])
+        strength = float(best["Strength"])
+        score = float(best["Score"])
+
         reasons = []
         if best["Biodegradable"] == 1:
             reasons.append("Biodegradable and eco-friendly")
-        if best["Total_CO2"] == df["Total_CO2"].min():
+        if total_co2 == float(df["Total_CO2"].min()):
             reasons.append("Very low carbon footprint")
-        if best["Total_Cost"] == df["Total_Cost"].min():
+        if total_cost == float(df["Total_Cost"].min()):
             reasons.append("Cost efficient option")
-        if best["Strength"] >= df["Strength"].mean():
+        if strength >= float(df["Strength"].mean()):
             reasons.append("High structural strength")
-        if best["Score"] >= 80:
+        if score >= 80:
             reasons.append("Excellent sustainability performance")
 
         reason_text = ", ".join(reasons)
-
-        # Convert numpy values to normal float
-        sustainability_score = float(best["Score"])
 
         new_record = Recommendation(
             item=item,
@@ -117,43 +123,51 @@ def home():
             units=units,
             fragility=fragility,
             best_material=best["Material"],
-            total_cost=float(best["Total_Cost"]),
-            total_co2=float(best["Total_CO2"]),
-            strength=float(best["Strength"]),
-            sustainability_score=sustainability_score,
+            total_cost=total_cost,
+            total_co2=total_co2,
+            strength=strength,
+            sustainability_score=score,
             reasons=reason_text
         )
 
         db.session.add(new_record)
         db.session.commit()
 
-        latest_result = {
+        return render_template("index.html", result={
             "item": item,
             "best_material": best["Material"],
-            "total_cost": round(float(best["Total_Cost"]), 2),
-            "total_co2": round(float(best["Total_CO2"]), 2),
-            "score": round(sustainability_score, 2),
+            "total_cost": round(total_cost, 2),
+            "total_co2": round(total_co2, 2),
+            "score": round(score, 2),
             "reasons": reason_text
-        }
-
-        return render_template("index.html", result=latest_result)
+        })
 
     return render_template("index.html")
 
 # =========================
-# EXPORT EXCEL ROUTE
+# EXPORT EXCEL
 # =========================
 @app.route("/export_excel")
 def export_excel():
-    if not latest_result:
+
+    last = Recommendation.query.order_by(Recommendation.id.desc()).first()
+    if not last:
         return "No data available"
 
     output = io.BytesIO()
 
-    df_export = pd.DataFrame([latest_result])
+    df = pd.DataFrame([{
+        "Item": last.item,
+        "Best Material": last.best_material,
+        "Total Cost": last.total_cost,
+        "Total CO2": last.total_co2,
+        "Strength": last.strength,
+        "Sustainability Score": last.sustainability_score,
+        "Reasons": last.reasons
+    }])
 
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-        df_export.to_excel(writer, index=False, sheet_name="Recommendation")
+        df.to_excel(writer, index=False, sheet_name="Recommendation")
 
     output.seek(0)
 
@@ -162,6 +176,47 @@ def export_excel():
         as_attachment=True,
         download_name="EcoPackAI_Recommendation.xlsx",
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+# =========================
+# EXPORT PDF (REPORTLAB)
+# =========================
+@app.route("/export_pdf")
+def export_pdf():
+
+    last = Recommendation.query.order_by(Recommendation.id.desc()).first()
+    if not last:
+        return "No data available"
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    elements = []
+
+    styles = getSampleStyleSheet()
+    elements.append(Paragraph("<b>EcoPackAI Recommendation Report</b>", styles["Title"]))
+    elements.append(Spacer(1, 0.3 * inch))
+
+    data = [
+        ["Item", last.item],
+        ["Best Material", last.best_material],
+        ["Total Cost", str(last.total_cost)],
+        ["Total CO2", str(last.total_co2)],
+        ["Strength", str(last.strength)],
+        ["Sustainability Score", str(last.sustainability_score)],
+        ["Reasons", last.reasons]
+    ]
+
+    table = Table(data, colWidths=[2.5 * inch, 3.5 * inch])
+    elements.append(table)
+
+    doc.build(elements)
+    buffer.seek(0)
+
+    return send_file(
+        buffer,
+        as_attachment=True,
+        download_name="EcoPackAI_Recommendation.pdf",
+        mimetype="application/pdf"
     )
 
 # =========================
