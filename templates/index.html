@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>EcoPackAI - Advanced</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<div class="dashboard">
+
+    <!-- LEFT GLASS PANEL -->
+    <div class="glass-panel form-panel">
+
+        <h2>🌱 EcoPackAI Intelligence</h2>
+
+        <form method="POST">
+
+            <div class="input-group">
+                <label>Item Name</label>
+                <input type="text" name="item"
+                       value="{{ form_data.item if form_data }}">
+            </div>
+
+            <div class="input-group">
+                <label>Weight (kg)</label>
+                <input type="number" step="0.01" name="weight"
+                       value="{{ form_data.weight if form_data }}">
+            </div>
+
+            <div class="input-group">
+                <label>Fragility</label>
+                <select name="fragility">
+                    <option value="L"
+                    {% if form_data and form_data.fragility == "L" %}selected{% endif %}>
+                        Low
+                    </option>
+                    <option value="M"
+                    {% if form_data and form_data.fragility == "M" %}selected{% endif %}>
+                        Medium
+                    </option>
+                    <option value="H"
+                    {% if form_data and form_data.fragility == "H" %}selected{% endif %}>
+                        High
+                    </option>
+                </select>
+            </div>
+
+            <div class="input-group">
+                <label>Units</label>
+                <input type="number" name="units"
+                       value="{{ form_data.units if form_data }}">
+            </div>
+
+            <div class="toggle-group">
+                <label class="toggle">
+                    <input type="checkbox" name="temp"
+                    {% if form_data and form_data.temp %}checked{% endif %}>
+                    <span class="slider"></span>
+                    <span class="toggle-text">🌡 Temperature Sensitive</span>
+                </label>
+
+                <label class="toggle">
+                    <input type="checkbox" name="moisture"
+                    {% if form_data and form_data.moisture %}checked{% endif %}>
+                    <span class="slider"></span>
+                    <span class="toggle-text">💧 Moisture Sensitive</span>
+                </label>
+            </div>
+
+            <button class="glow-btn">🚀 Get Recommendation</button>
+
+        </form>
+    </div>
+
+
+    <!-- RIGHT RESULT PANEL -->
+    <div class="glass-panel result-panel">
+
+        {% if top5 %}
+
+        <!-- BEST MATERIAL -->
+        <div class="best-section">
+
+            <h2>🏆 Best Sustainable Choice</h2>
+
+            <div class="best-card">
+
+                <h1>{{ best.Material }}</h1>
+
+                <div class="best-metrics">
+                    <span>₹ {{ best.Total_Cost }}</span>
+                    <span>{{ best.Total_CO2 }} kg CO₂</span>
+                    <span>{{ best.Strength }} MPa</span>
+                </div>
+
+                <!-- DOWNLOAD SECTION -->
+<div style="margin-top:30px; text-align:center;">
+
+    <h3>📥 Export Sustainability Report</h3>
+
+    <a href="/export_excel">
+        <button class="glow-btn" style="margin:10px;">
+            Download Excel Report
+        </button>
+    </a>
+
+    <a href="/export_pdf">
+        <button class="glow-btn" style="margin:10px;">
+            Download PDF Report
+        </button>
+    </a>
+
+</div>
+
+
+                <div class="progress-bar">
+                    <div class="progress-fill"
+                         style="width: {{ best.Score }}%;">
+                    </div>
+                </div>
+
+                <p class="score-text">
+                    Sustainability Score: {{ best.Score }}/100
+                </p>
+
+                <div class="reason-box">
+                    <h3>Why Recommended?</h3>
+                    <ul>
+                        {% for r in best.Reasons %}
+                        <li>{{ r }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+
+            </div>
+        </div>
+
+
+        <!-- COMPARISON TABLE -->
+        <div class="comparison-section">
+
+            <h2>Top 5 Material Comparison</h2>
+
+            <table class="comparison-table">
+                <thead>
+                    <tr>
+                        <th>Rank</th>
+                        <th>Material</th>
+                        <th>Cost (₹)</th>
+                        <th>CO₂ (kg)</th>
+                        <th>Strength</th>
+                        <th>Score</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+                    {% for m in top5 %}
+                    <tr {% if loop.index == 1 %}class="highlight-row"{% endif %}>
+                        <td>{{ loop.index }}</td>
+                        <td>{{ m.Material }}</td>
+                        <td>{{ m.Total_Cost }}</td>
+                        <td>{{ m.Total_CO2 }}</td>
+                        <td>{{ m.Strength }}</td>
+                        <td>
+                            <span class="score-badge
+                            {% if m.Score >= 80 %}green
+                            {% elif m.Score >= 60 %}orange
+                            {% else %}red
+                            {% endif %}">
+                                {{ m.Score }}
+                            </span>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+
+        </div>
+
+        {% endif %}
+
+    </div>
+
+</div>
+
+</body>
+</html>

@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Business Intelligence Dashboard</title>
+</head>
+<body>
+
+<h2>Business Intelligence Dashboard</h2>
+
+{% if empty %}
+<p>No recommendation data available.</p>
+{% else %}
+
+<h3>CO2 Reduction: {{ co2_reduction }}%</h3>
+<h3>Cost Savings: {{ cost_savings }}%</h3>
+
+<h3>Material Usage Trends</h3>
+<img src="{{ chart_path }}" width="600">
+
+<br><br>
+
+<a href="/export/pdf">Download PDF Report</a>
+<br>
+<a href="/export/excel">Download Excel Report</a>
+
+{% endif %}
+
+</body>
+</html>

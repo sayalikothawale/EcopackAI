@@ -1,0 +1,161 @@
+body {
+    margin: 0;
+    font-family: 'Segoe UI', sans-serif;
+    background: linear-gradient(135deg, #1c2b2d, #2e4a4d);
+    color: white;
+}
+
+.dashboard {
+    display: flex;
+    padding: 40px;
+    gap: 40px;
+}
+
+.glass-panel {
+    background: rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(20px);
+    border-radius: 20px;
+    padding: 30px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+}
+
+/* LEFT PANEL (UNCHANGED) */
+.form-panel {
+    width: 30%;
+}
+
+.input-group {
+    margin-bottom: 20px;
+}
+
+.input-group input,
+.input-group select {
+    width: 100%;
+    padding: 10px;
+    border-radius: 10px;
+    border: none;
+}
+
+/* TOGGLE */
+.toggle {
+    display: flex;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.toggle input {
+    display: none;
+}
+
+.slider {
+    width: 40px;
+    height: 20px;
+    background: #ccc;
+    border-radius: 20px;
+    position: relative;
+    margin-right: 10px;
+}
+
+.slider::before {
+    content: "";
+    width: 16px;
+    height: 16px;
+    background: white;
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    border-radius: 50%;
+    transition: 0.3s;
+}
+
+.toggle input:checked + .slider {
+    background: #00c853;
+}
+
+.toggle input:checked + .slider::before {
+    transform: translateX(20px);
+}
+
+.glow-btn {
+    width: 100%;
+    padding: 12px;
+    border: none;
+    border-radius: 12px;
+    background: linear-gradient(45deg, #00c853, #64dd17);
+    color: white;
+    cursor: pointer;
+}
+
+/* RIGHT PANEL */
+.result-panel {
+    width: 70%;
+}
+
+/* BEST SECTION */
+.best-card {
+    background: rgba(255,255,255,0.1);
+    padding: 20px;
+    border-radius: 15px;
+    margin-bottom: 40px;
+}
+
+.best-card h1 {
+    color: #64ffda;
+}
+
+.best-metrics span {
+    margin-right: 15px;
+}
+
+.progress-bar {
+    height: 12px;
+    background: rgba(255,255,255,0.2);
+    border-radius: 20px;
+    margin-top: 10px;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(to right, red, orange, yellow, #00e676);
+    border-radius: 20px;
+    transition: width 1s ease-in-out;
+}
+
+.score-text {
+    margin-top: 8px;
+}
+
+.reason-box {
+    margin-top: 15px;
+    background: rgba(255,255,255,0.12);
+    padding: 15px;
+    border-radius: 10px;
+}
+
+/* TABLE */
+.comparison-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: rgba(255,255,255,0.05);
+}
+
+.comparison-table th,
+.comparison-table td {
+    padding: 12px;
+    text-align: center;
+}
+
+.highlight-row {
+    background: rgba(0, 200, 83, 0.2);
+}
+
+.score-badge {
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-weight: bold;
+    color: white;
+}
+
+.green { background: #00c853; }
+.orange { background: #ff9800; }
+.red { background: #f44336; }

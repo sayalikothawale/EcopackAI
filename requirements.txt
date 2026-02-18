@@ -1,0 +1,7 @@
+Flask
+gunicorn
+pandas
+numpy
+flask_sqlalchemy
+psycopg2-binary
+reportlab

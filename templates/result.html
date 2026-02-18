@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Recommendation Result</title>
+    <style>
+        body { font-family: Arial; background:#f4f6f8; padding:30px; }
+        .best-box {
+            background:#e8f5e9;
+            padding:20px;
+            border-left:6px solid #2e7d32;
+            border-radius:8px;
+            margin-bottom:30px;
+        }
+        .badge {
+            background:#2e7d32;
+            color:white;
+            padding:5px 10px;
+            border-radius:5px;
+            font-size:12px;
+        }
+        table {
+            width:100%;
+            border-collapse:collapse;
+            background:white;
+        }
+        th, td {
+            padding:10px;
+            text-align:center;
+            border-bottom:1px solid #ddd;
+        }
+        th { background:#2e7d32; color:white; }
+        h2 { color:#2e7d32; }
+    </style>
+</head>
+<body>
+
+<h2>🌿 #1 Best Recommendation for {{ item }}</h2>
+
+<div class="best-box">
+    <h3>{{ best.Material }} <span class="badge">Best Choice</span></h3>
+    <p><strong>Total Cost:</strong> ₹ {{ best.Total_Cost }}</p>
+    <p><strong>Total CO₂:</strong> {{ best.Total_CO2 }} kg</p>
+    <p><strong>Sustainability Score:</strong> {{ best.Sustainability_Score }} / 100</p>
+
+    <h4>Why Chosen:</h4>
+    <ul>
+        <li>High Strength: {{ best.Strength }} MPa</li>
+        <li>Low CO₂ Emission: {{ best.CO2_per_kg }} kg/kg</li>
+        <li>Cost Efficient: ₹ {{ best.Cost_per_kg }} per kg</li>
+        <li>Biodegradable: {{ best.Biodegradable }}</li>
+    </ul>
+</div>
+
+<h2>Top 5 Material Comparison</h2>
+
+<hr>
+
+<h3>Download Sustainability Report</h3>
+
+<a href="/export_excel">
+    <button>Download Excel Report</button>
+</a>
+
+<br><br>
+
+<a href="/export_pdf">
+    <button>Download PDF Report</button>
+</a>
+
+
+<table>
+    <tr>
+        <th>Rank</th>
+        <th>Material</th>
+        <th>Total Cost</th>
+        <th>Total CO₂</th>
+        <th>Score</th>
+    </tr>
+
+    {% for mat in top5 %}
+    <tr>
+        <td>{{ loop.index }}</td>
+        <td>{{ mat.Material }}</td>
+        <td>₹ {{ mat.Total_Cost }}</td>
+        <td>{{ mat.Total_CO2 }}</td>
+        <td>{{ mat.Sustainability_Score }}</td>
+    </tr>
+    {% endfor %}
+
+</table>
+
+</body>
+</html>
