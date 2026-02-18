@@ -29,7 +29,7 @@ class Recommendation(db.Model):
     weight = db.Column(db.Float)
     units = db.Column(db.Integer)
     fragility = db.Column(db.String(10))
-    category = db.Column(db.String(50))
+    
     best_material = db.Column(db.String(200))
     total_cost = db.Column(db.Float)
     total_co2 = db.Column(db.Float)
@@ -121,7 +121,7 @@ def home():
                 weight=float(weight),
                 units=int(units),
                 fragility=str(fragility),
-                category="general",
+                
                 best_material=str(best["Material"]),
                 total_cost=float(best["Total_Cost"]),
                 total_co2=float(best["Total_CO2"]),
